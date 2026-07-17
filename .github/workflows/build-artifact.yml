@@ -1,0 +1,41 @@
+# TEMPORARY (fork-only): build a Debug agterm.app on CI and upload it as an artifact,
+# so the feature branch can be hand-tested on a machine without a local Xcode.
+# Not part of the upstream PR — this workflow lives only on the ci/build-artifact branch.
+name: build-artifact
+
+on:
+  push:
+    branches: [ci/build-artifact]
+  workflow_dispatch:
+
+jobs:
+  build:
+    name: Build Debug app artifact
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v7
+      - name: Cache libghostty (GhosttyKit + resources)
+        uses: actions/cache@v6
+        with:
+          path: |
+            GhosttyKit.xcframework
+            agterm/Resources/ghostty
+            agterm/Resources/terminfo
+          key: ghosttykit-${{ hashFiles('scripts/setup.sh') }}
+      - name: Install xcodegen
+        run: brew install xcodegen
+      - name: Build libghostty + app (Debug)
+        run: |
+          scripts/setup.sh
+          xcodegen generate
+          xcodebuild -project agterm.xcodeproj -scheme agterm -configuration Debug \
+            -derivedDataPath build/DerivedData build
+      # tar, not upload-artifact's own zip: the artifact zip drops executable bits and
+      # symlinks, which breaks a .app bundle
+      - name: Pack app (preserving permissions and symlinks)
+        run: tar -czf agterm-debug.tar.gz -C build/DerivedData/Build/Products/Debug agterm.app
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agterm-debug-app
+          path: agterm-debug.tar.gz
+          retention-days: 7
